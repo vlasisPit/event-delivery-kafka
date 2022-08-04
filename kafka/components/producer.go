@@ -20,7 +20,7 @@ type Producer struct {
 	writer *kafka.Writer
 }
 
-func New(topic string, brokerAddress string, config ProducerConfig) (p *Producer) {
+func (Producer) New(topic string, brokerAddress string, config ProducerConfig) (p *Producer) {
 	return &Producer{
 		writer: &kafka.Writer{
 			Addr:                   kafka.TCP(brokerAddress),

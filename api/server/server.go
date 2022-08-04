@@ -23,6 +23,7 @@ func (s *Server) Initialize(port string) {
 	s.initializeRoutes()
 	err := http.ListenAndServe(port, s.Mux)
 	if err != nil {
+		s.Producer.Close()
 		panic(err)
 	}
 }
@@ -68,12 +69,17 @@ func (s *Server) ingest(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 
+	if event.UserID == "" {
+		utils.ConstructErrorResponse(writer, "UserID should be provided", http.StatusBadRequest)
+		return
+	}
+
 	kafkaMessage := models.KafkaMessage{}.New(event.UserID, event.Payload, time.Now())
 	err = s.Producer.Send(request.Context(), *kafkaMessage)
 	if err != nil {
 		utils.ConstructErrorResponse(writer, err.Error(), http.StatusInternalServerError)
 		return
 	} else {
-		utils.ConstructSuccessfulResponse(writer, http.StatusOK, []byte("Message received successfully"))
+		utils.ConstructSuccessfulResponse(writer, http.StatusOK, []byte("Message received and stored successfully"))
 	}
 }
