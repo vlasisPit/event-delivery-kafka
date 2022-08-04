@@ -40,10 +40,16 @@ func (a *App) createProducer() *components.Producer {
 }
 
 func (a *App) checkIfTopicExistsAndCreate(brokerAddress string) {
+	config := []kafka.ConfigEntry{{
+		ConfigName:  "log.retention.hours",
+		ConfigValue: "24",
+	}}
+
 	topicConfig := components.TopicConfig{
 		Topic:             a.Topic,
 		NumPartitions:     10,
 		ReplicationFactor: 1,
+		ConfigEntries:     config,
 	}
 
 	topic := components.Topic{}.New(topicConfig)

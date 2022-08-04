@@ -7,9 +7,10 @@ import (
 )
 
 type TopicConfig struct {
-	Topic string
-	NumPartitions int
+	Topic             string
+	NumPartitions     int
 	ReplicationFactor int
+	ConfigEntries     []kafka.ConfigEntry
 }
 
 type Topic struct {
@@ -25,7 +26,7 @@ func (Topic) New(config TopicConfig) (p *Topic) {
 /*
 App can not work if topic can not be created in Kafka.
 I such a case, app should stop working (panic)
- */
+*/
 func (topic *Topic) CreateTopic(brokerAddress string) {
 	conn, err := kafka.Dial("tcp", brokerAddress)
 	if err != nil {
@@ -49,6 +50,7 @@ func (topic *Topic) CreateTopic(brokerAddress string) {
 			Topic:             topic.config.Topic,
 			NumPartitions:     topic.config.NumPartitions,
 			ReplicationFactor: topic.config.ReplicationFactor,
+			ConfigEntries:     topic.config.ConfigEntries,
 		},
 	}
 
