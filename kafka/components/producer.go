@@ -20,7 +20,7 @@ type Producer struct {
 	writer *kafka.Writer
 }
 
-func (*Producer) newProducer(topic string, brokerAddress string, config ProducerConfig) (p *Producer) {
+func New(topic string, brokerAddress string, config ProducerConfig) (p *Producer) {
 	return &Producer{
 		writer: &kafka.Writer{
 			Addr:                   kafka.TCP(brokerAddress),
@@ -34,7 +34,7 @@ func (*Producer) newProducer(topic string, brokerAddress string, config Producer
 	}
 }
 
-func (producer *Producer) send(ctx context.Context, msgs ...models.KafkaMessage) error {
+func (producer *Producer) Send(ctx context.Context, msgs ...models.KafkaMessage) error {
 	messages := make([]kafka.Message, len(msgs))
 	for i := range msgs {
 		messages[i] = kafka.Message{
@@ -47,7 +47,7 @@ func (producer *Producer) send(ctx context.Context, msgs ...models.KafkaMessage)
 	return producer.writer.WriteMessages(ctx, messages...)
 }
 
-func (producer *Producer) close() error {
+func (producer *Producer) Close() error {
 	if err := producer.writer.Close(); err != nil {
 		log.Fatal("failed to close writer:", err)
 		return err

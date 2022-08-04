@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestCountryDeserialization(t *testing.T) {
+func TestEventDeserialization(t *testing.T) {
 	eventBytes, err := ioutil.ReadFile("event.json")
 	var event Event
 	err = json.Unmarshal(eventBytes, &event)

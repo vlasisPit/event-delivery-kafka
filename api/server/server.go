@@ -1,8 +1,14 @@
 package server
 
 import (
+	"encoding/json"
 	"event-delivery-kafka/api/utils"
+	"event-delivery-kafka/kafka/components"
+	"event-delivery-kafka/models"
+	"fmt"
+	"io/ioutil"
 	"net/http"
+	"time"
 )
 
 /**
@@ -23,6 +29,7 @@ func (s *Server) Initialize(port string) {
 
 type Server struct {
 	Mux     *http.ServeMux
+	Producer *components.Producer
 }
 
 /**
@@ -41,5 +48,32 @@ func (s *Server) events(writer http.ResponseWriter, request *http.Request) {
 }
 
 func (s *Server) ingest(writer http.ResponseWriter, request *http.Request) {
+	bodyBytes, err := ioutil.ReadAll(request.Body)
+	defer request.Body.Close()
+	if err != nil {
+		utils.ConstructErrorResponse(writer, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
+	ct := request.Header.Get("content-type")
+	if ct != "application/json" {
+		utils.ConstructErrorResponse(writer, fmt.Sprintf("need content-type 'application/json', but got '%s'", ct), http.StatusUnsupportedMediaType)
+		return
+	}
+
+	var event models.Event
+	err = json.Unmarshal(bodyBytes, &event)
+	if err != nil {
+		utils.ConstructErrorResponse(writer, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	kafkaMessage := models.KafkaMessage{}.New(event.UserID, event.Payload, time.Now())
+	err = s.Producer.Send(request.Context(), *kafkaMessage)
+	if err != nil {
+		utils.ConstructErrorResponse(writer, err.Error(), http.StatusInternalServerError)
+		return
+	} else {
+		utils.ConstructSuccessfulResponse(writer, http.StatusOK, []byte("Message received successfully"))
+	}
 }
