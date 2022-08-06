@@ -2,7 +2,8 @@ package components
 
 import (
 	"context"
-	"fmt"
+	"event-delivery-kafka/kafka/backoff"
+	"event-delivery-kafka/kafka/processors"
 	"github.com/segmentio/kafka-go"
 	"log"
 )
@@ -16,10 +17,12 @@ type ConsumerConfig struct {
 }
 
 type Consumer struct {
-	reader *kafka.Reader
+	reader                        *kafka.Reader
+	processor                     processors.Processor
+	exponentialBackOffWithRetries backoff.ExponentialBackOffWithRetries
 }
 
-func (Consumer) New(topic string, brokerAddress string, config ConsumerConfig) (c *Consumer) {
+func (Consumer) New(topic string, brokerAddress string, config ConsumerConfig, processor *processors.Processor, backoffStrategy backoff.ExponentialBackOffWithRetries) *Consumer {
 	return &Consumer{
 		reader: kafka.NewReader(kafka.ReaderConfig{
 			Brokers:     []string{brokerAddress},
@@ -30,6 +33,8 @@ func (Consumer) New(topic string, brokerAddress string, config ConsumerConfig) (
 			StartOffset: config.StartOffset,
 			Logger:      config.Logger,
 		}),
+		processor:                     *processor,
+		exponentialBackOffWithRetries: backoffStrategy,
 	}
 }
 
@@ -39,9 +44,17 @@ func (c *Consumer) Consume(ctx context.Context) {
 		if err != nil {
 			break
 		}
-		fmt.Printf("message at topic/partition/offset %v/%v/%v: %s = %s\n", m.Topic, m.Partition, m.Offset, string(m.Key), string(m.Value))
+
+		operation := func() error {
+			return c.processor.Action(m)
+		}
+
+		if err := c.exponentialBackOffWithRetries.Run(operation); err != nil {
+			log.Printf("failed to run operation using exponential backoff strategy: %v for key %s \n", err.Error(), string(m.Key))
+		}
+
 		if err := c.reader.CommitMessages(ctx, m); err != nil {
-			log.Fatal("failed to commit messages:", err)
+			log.Printf("failed to commit messages: %v for key %s \n", err.Error(), string(m.Key))
 		}
 	}
 }
