@@ -12,6 +12,7 @@ func main() {
 		mocks.PostgresMock{}.New(),
 		mocks.SnowflakeMock{}.New(),
 		mocks.AzureDataLakeMock{}.New(),
+		mocks.RedshiftMock{}.New(),
 	}
 
 	app := api.App{
