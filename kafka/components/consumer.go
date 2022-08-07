@@ -6,6 +6,10 @@ import (
 	"event-delivery-kafka/kafka/processors"
 	"github.com/segmentio/kafka-go"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 )
 
 type ConsumerConfig struct {
@@ -23,7 +27,7 @@ type Consumer struct {
 }
 
 func (Consumer) New(topic string, brokerAddress string, config ConsumerConfig, processor *processors.Processor, backoffStrategy backoff.ExponentialBackOffWithRetries) *Consumer {
-	return &Consumer{
+	c := &Consumer{
 		reader: kafka.NewReader(kafka.ReaderConfig{
 			Brokers:     []string{brokerAddress},
 			GroupID:     config.GroupID,
@@ -36,6 +40,32 @@ func (Consumer) New(topic string, brokerAddress string, config ConsumerConfig, p
 		processor:                     *processor,
 		exponentialBackOffWithRetries: backoffStrategy,
 	}
+
+	c.Close(config.GroupID)
+	return c
+}
+
+/*
+According to documentation
+Note that it is important to call Close() on a Reader when a process exits. The kafka server needs a graceful
+disconnect to stop it from continuing to attempt to send messages to the connected clients. The given example will
+not call Close() if the process is terminated with SIGINT (ctrl-c at the shell) or SIGTERM (as docker stop or a
+kubernetes restart does). This can result in a delay when a new reader on the same topic connects (e.g. new process
+started or new container running). Use a signal.Notify handler to close the reader on process shutdown.
+ */
+func (c *Consumer) Close(groupId string) {
+	signalHandler := make(chan os.Signal, 1)
+	signal.Notify(signalHandler, os.Interrupt)
+	signal.Notify(signalHandler, syscall.SIGTERM)
+	go func() {
+		<-signalHandler
+		if err := c.reader.Close(); err != nil {
+			log.Fatalf("failed to close reader with groupdId %s with error %s \n", groupId, err.Error())
+		}
+		log.Printf("Consumer reader for groupId %s closed \n", groupId)
+		time.Sleep(1 * time.Second)
+		os.Exit(1)
+	}()
 }
 
 func (c *Consumer) Consume(ctx context.Context) {
