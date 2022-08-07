@@ -23,6 +23,7 @@ type App struct {
 	Topic              string
 	BrokerAddress      string
 	DestinationTimeout time.Duration
+	Destinations       []mocks.Destination
 }
 
 func (a *App) Run() {
@@ -50,20 +51,13 @@ func (a *App) createProducer() *components.Producer {
 }
 
 func (a *App) createAndStartConsumers() {
-	destinations := [4]mocks.Destination{
-		mocks.BigqueryMock{}.New(),
-		mocks.PostgresMock{}.New(),
-		mocks.SnowflakeMock{}.New(),
-		mocks.AzureDataLakeMock{}.New(),
-	}
-
-	for i, _ := range destinations {
+	for i, _ := range a.Destinations {
 		consumerConfig := components.ConsumerConfig{
-			GroupID:     "event-delivery-kafka-" + destinations[i].Name(), //different group Id for each consumer
+			GroupID:     "event-delivery-kafka-" + a.Destinations[i].Name(), //different group Id for each consumer
 			MinBytes:    10e3,                                             // 10KB
 			MaxBytes:    10e6,                                             // 10MB
 			StartOffset: kafka.FirstOffset,
-			Logger:      log.New(os.Stdout, fmt.Sprintf("kafka reader for groupId : event-delivery-kafka-%s", destinations[i].Name()), 0),
+			Logger:      log.New(os.Stdout, fmt.Sprintf("kafka reader for groupId : event-delivery-kafka-%s", a.Destinations[i].Name()), 0),
 		}
 
 		backoffStrategy := a.createBackOffStrategy()
@@ -72,7 +66,7 @@ func (a *App) createAndStartConsumers() {
 			a.Topic,
 			a.BrokerAddress,
 			consumerConfig,
-			processors.Processor{}.New(a.createConsumerAction(destinations[i])),
+			processors.Processor{}.New(a.createConsumerAction(a.Destinations[i])),
 			*backoffStrategy,
 		)
 		go consumer.Consume(context.Background())
@@ -90,7 +84,7 @@ func (a *App) createConsumerAction(dest mocks.Destination) func(message kafka.Me
 
 		select {
 		case <-time.After(a.DestinationTimeout):
-			log.Printf("failed to send message: %v for key %s \n", dest.Name() + " : timed out", string(message.Key))
+			log.Printf("failed to send message: %v for key %s \n", dest.Name()+" : timed out", string(message.Key))
 			return errors.New(dest.Name() + " : timed out")
 		case res := <-result:
 			if res != nil {
@@ -122,12 +116,14 @@ func (a *App) checkIfTopicExistsAndCreate(brokerAddress string) {
 }
 
 /*
-Custom implementation of exponential backoff strategy to achieve the following time periods to choose when to run
-the next try. With existing implementation, use custom properties is not allowed.
+Custom implementation of exponential backoff strategy to achieve the following time periods to choose randomly when to
+run the next try. With existing implementation, use custom properties is not allowed.
 [0.125sec , 0.375sec]	1st retry
 [0.1875sec , 0.5625sec]	2nd retry
 [0.2812sec , 0.843sec]	3rd retry
- */
+
+For more information, check documentation in github.com/cenkalti/backoff/v4@v4.1.3/exponential.go:16
+*/
 func (a *App) createBackOffStrategy() *backoffStr.ExponentialBackOffWithRetries {
 	config := backoffStr.ExponentialBackOffWithRetriesConfig{
 		InitialInterval:     250 * time.Millisecond,
