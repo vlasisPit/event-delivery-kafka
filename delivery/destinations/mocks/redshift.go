@@ -28,7 +28,6 @@ func (redshiftMock *RedshiftMock) Receive(event ...models.Event) error {
 	min := 0
 	max := 10
 	randomNum := rand.Intn(max-min) + min //between 0 and 9
-	fmt.Println(randomNum)
 
 	if randomNum >= 7 {
 		log.Println(fmt.Sprintf("redshift: Received event successfully for userId %v ", event[0].UserID))

@@ -3,10 +3,19 @@ package main
 import (
 	"event-delivery-kafka/api"
 	"event-delivery-kafka/delivery/destinations/mocks"
+	"github.com/joho/godotenv"
+	"log"
+	"os"
 	"time"
 )
 
 func main() {
+	err := godotenv.Load("config/.env")
+
+	if err != nil {
+		log.Fatalf("Error loading .env file")
+	}
+
 	destinations := []mocks.Destination{
 		mocks.BigqueryMock{}.New(),
 		mocks.PostgresMock{}.New(),
@@ -16,9 +25,9 @@ func main() {
 	}
 
 	app := api.App{
-		Port:               ":8080",
-		Topic:              "event-log",
-		BrokerAddress:      "localhost:9092",
+		Port:               os.Getenv("PORT"),
+		Topic:              os.Getenv("TOPIC"),
+		BrokerAddress:      os.Getenv("BROKER_ADDRESS"),
 		DestinationTimeout: 1 * time.Second,
 		Destinations:       destinations,
 	}
