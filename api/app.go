@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"event-delivery-kafka/api/server"
 	"event-delivery-kafka/delivery/destinations/mocks"
 	backoffStr "event-delivery-kafka/kafka/backoff"
@@ -18,9 +19,10 @@ import (
 )
 
 type App struct {
-	Port          string
-	Topic         string
-	BrokerAddress string
+	Port               string
+	Topic              string
+	BrokerAddress      string
+	DestinationTimeout time.Duration
 }
 
 func (a *App) Run() {
@@ -48,24 +50,31 @@ func (a *App) createProducer() *components.Producer {
 }
 
 func (a *App) createAndStartConsumers() {
-	destinations := [3]mocks.Destination{
+	destinations := [4]mocks.Destination{
 		mocks.BigqueryMock{}.New(),
 		mocks.PostgresMock{}.New(),
 		mocks.SnowflakeMock{}.New(),
+		mocks.AzureDataLakeMock{}.New(),
 	}
 
 	for i, _ := range destinations {
 		consumerConfig := components.ConsumerConfig{
 			GroupID:     "event-delivery-kafka-" + destinations[i].Name(), //different group Id for each consumer
-			MinBytes:    10e3,                                  // 10KB
-			MaxBytes:    10e6,                                  // 10MB
+			MinBytes:    10e3,                                             // 10KB
+			MaxBytes:    10e6,                                             // 10MB
 			StartOffset: kafka.FirstOffset,
 			Logger:      log.New(os.Stdout, fmt.Sprintf("kafka reader for groupId : event-delivery-kafka-%s", destinations[i].Name()), 0),
 		}
 
 		backoffStrategy := a.createBackOffStrategy()
 
-		consumer := components.Consumer{}.New(a.Topic, a.BrokerAddress, consumerConfig, processors.Processor{}.New(a.createConsumerAction(destinations[i])), *backoffStrategy)
+		consumer := components.Consumer{}.New(
+			a.Topic,
+			a.BrokerAddress,
+			consumerConfig,
+			processors.Processor{}.New(a.createConsumerAction(destinations[i])),
+			*backoffStrategy,
+		)
 		go consumer.Consume(context.Background())
 	}
 }
@@ -73,11 +82,23 @@ func (a *App) createAndStartConsumers() {
 func (a *App) createConsumerAction(dest mocks.Destination) func(message kafka.Message) error {
 	return func(message kafka.Message) error {
 		ev := models.Event{}.New(string(message.Key), string(message.Value))
-		if err := dest.Receive(*ev); err != nil {
-			log.Printf("failed to send message: %v for key %s \n", err.Error(), string(message.Key))
-			return err
+
+		result := make(chan error, 1)
+		go func() {
+			result <- dest.Receive(*ev)
+		}()
+
+		select {
+		case <-time.After(a.DestinationTimeout):
+			log.Printf("failed to send message: %v for key %s \n", dest.Name() + " : timed out", string(message.Key))
+			return errors.New(dest.Name() + " : timed out")
+		case res := <-result:
+			if res != nil {
+				log.Printf("failed to send message: %v for key %s \n", res.Error(), string(message.Key))
+				return errors.New(res.Error())
+			}
+			return nil
 		}
-		return nil
 	}
 }
 
@@ -100,13 +121,20 @@ func (a *App) checkIfTopicExistsAndCreate(brokerAddress string) {
 	}
 }
 
+/*
+Custom implementation of exponential backoff strategy to achieve the following time periods to choose when to run
+the next try. With existing implementation, use custom properties is not allowed.
+[0.125sec , 0.375sec]	1st retry
+[0.1875sec , 0.5625sec]	2nd retry
+[0.2812sec , 0.843sec]	3rd retry
+ */
 func (a *App) createBackOffStrategy() *backoffStr.ExponentialBackOffWithRetries {
 	config := backoffStr.ExponentialBackOffWithRetriesConfig{
 		InitialInterval:     250 * time.Millisecond,
 		RandomizationFactor: 0.5,
 		Multiplier:          1.5,
 		MaxInterval:         900 * time.Millisecond,
-		MaxElapsedTime:      1500 * time.Millisecond,
+		MaxElapsedTime:      4 * time.Second,
 		Stop:                -1,
 		Clock:               backoff.SystemClock,
 	}
