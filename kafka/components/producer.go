@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+type KafkaWriter interface {
+	WriteMessages(ctx context.Context, msgs ...kafka.Message) error
+	Close() error
+}
+
 type ProducerConfig struct {
 	Balancer     kafka.Balancer
 	WriteTimeout time.Duration
@@ -17,12 +22,12 @@ type ProducerConfig struct {
 }
 
 type Producer struct {
-	writer *kafka.Writer
+	Writer KafkaWriter
 }
 
 func (Producer) New(topic string, brokerAddress string, config ProducerConfig) *Producer {
 	return &Producer{
-		writer: &kafka.Writer{
+		Writer: &kafka.Writer{
 			Addr:                   kafka.TCP(brokerAddress),
 			Topic:                  topic,
 			Balancer:               config.Balancer,
@@ -44,11 +49,11 @@ func (producer *Producer) Send(ctx context.Context, msgs ...models.KafkaMessage)
 		}
 	}
 
-	return producer.writer.WriteMessages(ctx, messages...)
+	return producer.Writer.WriteMessages(ctx, messages...)
 }
 
 func (producer *Producer) Close() error {
-	if err := producer.writer.Close(); err != nil {
+	if err := producer.Writer.Close(); err != nil {
 		log.Fatal("failed to close writer:", err)
 		return err
 	}
