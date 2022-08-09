@@ -1,5 +1,5 @@
 test_all:
-	go test -v -cover ./...
+	go test -v ./...
 
 go_run:
 	go run main.go
