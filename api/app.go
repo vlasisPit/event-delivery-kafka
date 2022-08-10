@@ -43,7 +43,7 @@ func (a *App) createProducer() *components.Producer {
 		Balancer:     &kafka.Murmur2Balancer{}, //ensures that messages with the same key are routed to the same partition
 		WriteTimeout: 5 * time.Second,
 		ReadTimeout:  5 * time.Second,
-		RequiredAcks: kafka.RequireOne, // wait for the leader to acknowledge the writes
+		RequiredAcks: kafka.RequireAll, // wait for all kafka nodes to acknowledge the writes
 		Logger:       log.New(os.Stdout, "kafka writer: ", 0),
 	}
 
@@ -53,7 +53,7 @@ func (a *App) createProducer() *components.Producer {
 func (a *App) createAndStartConsumers() {
 	for i, _ := range a.Destinations {
 		consumerConfig := components.ConsumerConfig{
-			GroupID:     "event-delivery-kafka-" + a.Destinations[i].Name(), //different group Id for each consumer
+			GroupID:     "event-delivery-kafka-" + a.Destinations[i].Name(), //different group Id for each consumer. Destination name should be unique
 			MinBytes:    10e3,                                             // 10KB
 			MaxBytes:    10e6,                                             // 10MB
 			StartOffset: kafka.FirstOffset,
